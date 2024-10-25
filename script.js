@@ -1,547 +1,282 @@
-// Main app initialization
+// Firebase Configuration and Initialization
+import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js";
+import { getAnalytics } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-analytics.js";
+import { 
+    getAuth, 
+    createUserWithEmailAndPassword,
+    signInWithEmailAndPassword,
+    signOut,
+    onAuthStateChanged 
+} from "https://www.gstatic.com/firebasejs/11.0.1/firebase-auth.js";
+import { 
+    getFirestore,
+    collection,
+    addDoc,
+    getDocs,
+    updateDoc,
+    deleteDoc,
+    doc,
+    query,
+    orderBy,
+    serverTimestamp,
+    increment
+} from "https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore.js";
 
-document.addEventListener('DOMContentLoaded', () => {
+// Firebase configuration object
+const firebaseConfig = {
+    apiKey: "AIzaSyBDrb3XT8ppaO0T7tzOdUPS_NjA5-Oxqxo",
+    authDomain: "meme-ex-6a79b.firebaseapp.com",
+    projectId: "meme-ex-6a79b",
+    storageBucket: "meme-ex-6a79b.appspot.com",
+    messagingSenderId: "90531183780",
+    appId: "1:90531183780:web:21bdecc087de737744ba31",
+    measurementId: "G-0M1JK8BL7X"
+};
 
-    initializeAuth();
+// Initialize Firebase services
+const app = initializeApp(firebaseConfig);
+const analytics = getAnalytics(app);
+const auth = getAuth(app);
+const db = getFirestore(app);
 
-    initializeUI();
+// Global state management
+let currentUser = null;
 
-    setupEventListeners();
-
-    initializeMemeCreator();
-
+// Authentication Event Listener
+onAuthStateChanged(auth, (user) => {
+    currentUser = user;
+    updateUIForAuthState(user);
+    if (user) {
+        loadMemes();
+        initializeAdSense();
+    }
 });
 
-// Authentication handling
-
-const auth = {
-
-    currentUser: null,
-
-    
-
-    async login(email, password) {
-
-        try {
-
-            // Simulate API call
-
-            const response = await fetch('/api/login', {
-
-                method: 'POST',
-
-                headers: {
-
-                    'Content-Type': 'application/json'
-
-                },
-
-                body: JSON.stringify({ email, password })
-
-            });
-
-            
-
-            if (response.ok) {
-
-                const userData = await response.json();
-
-                this.currentUser = userData;
-
-                this.onAuthStateChanged(userData);
-
-                return { success: true };
-
-            }
-
-        } catch (error) {
-
-            console.error('Login error:', error);
-
-            showNotification('Login failed. Please try again.', 'error');
-
-            return { success: false, error };
-
-        }
-
-    },
-
-    async loginWithSocial(provider) {
-
-        try {
-
-            const popup = window.open(`/auth/${provider}`, 'Social Login', 
-
-                'width=500,height=600,scrollbars=yes');
-
-            
-
-            window.addEventListener('message', async (event) => {
-
-                if (event.data.type === 'social-auth-success') {
-
-                    this.currentUser = event.data.user;
-
-                    this.onAuthStateChanged(event.data.user);
-
-                    popup.close();
-
-                }
-
-            });
-
-        } catch (error) {
-
-            console.error('Social login error:', error);
-
-            showNotification('Social login failed. Please try again.', 'error');
-
-        }
-
-    },
-
-    onAuthStateChanged(user) {
-
-        const authStateEvent = new CustomEvent('authStateChanged', { detail: { user } });
-
-        document.dispatchEvent(authStateEvent);
-
-        updateUIForAuthState(user);
-
-    }
-
-};
-
-// UI Initialization and Updates
-
-function initializeUI() {
-
-    // Initialize loading states
-
-    document.querySelectorAll('.btn').forEach(button => {
-
-        button.addEventListener('click', function() {
-
-            this.classList.add('loading');
-
-        });
-
-    });
-
-    // Initialize tooltips
-
-    const tooltips = document.querySelectorAll('[data-tooltip]');
-
-    tooltips.forEach(element => {
-
-        new Tooltip(element, {
-
-            placement: 'top',
-
-            trigger: 'hover'
-
-        });
-
-    });
-
-    // Initialize animations
-
-    initializeAnimations();
-
-}
-
+// UI Update Functions
 function updateUIForAuthState(user) {
-
-    const authElements = document.querySelectorAll('[data-auth-required]');
-
-    const nonAuthElements = document.querySelectorAll('[data-non-auth-required]');
-
-    
+    const authContainer = document.getElementById('authContainer');
+    const memeContainer = document.getElementById('memeContainer');
+    const userSection = document.getElementById('userSection');
 
     if (user) {
-
-        authElements.forEach(el => el.classList.remove('hidden'));
-
-        nonAuthElements.forEach(el => el.classList.add('hidden'));
-
-        updateUserProfile(user);
-
+        authContainer.style.display = 'none';
+        memeContainer.style.display = 'block';
+        userSection.innerHTML = `
+            <span class="user-email">${user.email}</span>
+            <button onclick="handleSignOut()" class="btn-logout">Sign Out</button>
+        `;
+        renderMemeForm();
     } else {
-
-        authElements.forEach(el => el.classList.add('hidden'));
-
-        nonAuthElements.forEach(el => el.classList.remove('hidden'));
-
+        authContainer.style.display = 'block';
+        memeContainer.style.display = 'none';
+        userSection.innerHTML = '';
+        renderAuthForm();
     }
-
 }
 
-// Meme Creator Functionality
-
-const memeCreator = {
-
-    canvas: null,
-
-    ctx: null,
-
-    currentTemplate: null,
-
-    
-
-    initialize() {
-
-        this.canvas = document.getElementById('memeCanvas');
-
-        this.ctx = this.canvas.getContext('2d');
-
-        this.setupTools();
-
-        this.loadTemplates();
-
-    },
-
-    
-
-    setupTools() {
-
-        const textTool = document.getElementById('textTool');
-
-        const imageTool = document.getElementById('imageTool');
-
-        
-
-        textTool.addEventListener('click', () => this.activateTool('text'));
-
-        imageTool.addEventListener('click', () => this.activateTool('image'));
-
-        
-
-        this.setupTextControls();
-
-        this.setupImageControls();
-
-    },
-
-    
-
-    async loadTemplates() {
-
-        try {
-
-            const response = await fetch('/api/meme-templates');
-
-            const templates = await response.json();
-
-            this.renderTemplateGallery(templates);
-
-        } catch (error) {
-
-            console.error('Failed to load templates:', error);
-
-            showNotification('Failed to load meme templates', 'error');
-
-        }
-
-    },
-
-    
-
-    renderTemplateGallery(templates) {
-
-        const gallery = document.getElementById('templateGallery');
-
-        templates.forEach(template => {
-
-            const templateEl = createTemplateElement(template);
-
-            templateEl.addEventListener('click', () => this.loadTemplate(template));
-
-            gallery.appendChild(templateEl);
-
-        });
-
-    },
-
-    
-
-    async loadTemplate(template) {
-
-        const img = new Image();
-
-        img.crossOrigin = "anonymous";
-
-        img.src = template.url;
-
-        img.onload = () => {
-
-            this.currentTemplate = template;
-
-            this.resetCanvas();
-
-            this.drawTemplate();
-
-        };
-
-    }
-
-};
-
-// Notification System
-
-const notifications = {
-
-    show(message, type = 'info', duration = 3000) {
-
-        const notification = document.createElement('div');
-
-        notification.className = `notification notification-${type}`;
-
-        notification.textContent = message;
-
-        
-
-        document.body.appendChild(notification);
-
-        
-
-        // Animate in
-
-        requestAnimationFrame(() => {
-
-            notification.classList.add('notification-visible');
-
-        });
-
-        
-
-        // Auto dismiss
-
-        setTimeout(() => {
-
-            notification.classList.remove('notification-visible');
-
-            setTimeout(() => {
-
-                notification.remove();
-
-            }, 300);
-
-        }, duration);
-
-    }
-
-};
-
-// Event Listeners Setup
-
-function setupEventListeners() {
-
-    // Login form submission
-
-    const loginForm = document.getElementById('loginForm');
-
-    if (loginForm) {
-
-        loginForm.addEventListener('submit', async (e) => {
-
-            e.preventDefault();
-
-            const email = loginForm.email.value;
-
-            const password = loginForm.password.value;
-
-            await auth.login(email, password);
-
-        });
-
-    }
-
-    
-
-    // Social login buttons
-
-    const socialButtons = document.querySelectorAll('.social-btn');
-
-    socialButtons.forEach(button => {
-
-        button.addEventListener('click', () => {
-
-            const provider = button.dataset.provider;
-
-            auth.loginWithSocial(provider);
-
-        });
-
-    });
-
-    
-
-    // Navigation handling
-
-    document.querySelectorAll('[data-nav]').forEach(link => {
-
-        link.addEventListener('click', (e) => {
-
-            e.preventDefault();
-
-            const target = link.dataset.nav;
-
-            navigateToSection(target);
-
-        });
-
-    });
-
+function renderAuthForm() {
+    const authContainer = document.getElementById('authContainer');
+    authContainer.innerHTML = `
+        <div class="auth-form">
+            <h2>Authentication</h2>
+            <div class="form-group">
+                <input type="email" id="email" placeholder="Email" required>
+            </div>
+            <div class="form-group">
+                <input type="password" id="password" placeholder="Password" required>
+            </div>
+            <div class="auth-buttons">
+                <button onclick="handleSignIn()" class="btn-primary">Sign In</button>
+                <button onclick="handleSignUp()" class="btn-secondary">Sign Up</button>
+            </div>
+        </div>
+    `;
 }
 
-// Animation Initialization
+function renderMemeForm() {
+    const memeContainer = document.getElementById('memeContainer');
+    memeContainer.innerHTML = `
+        <div class="meme-form">
+            <textarea id="memeContent" placeholder="Share your meme..." class="meme-input"></textarea>
+            <button onclick="handleAddMeme()" class="btn-post">Post Meme</button>
+        </div>
+        <div id="memesList" class="memes-list"></div>
+    `;
+}
 
-function initializeAnimations() {
+// Authentication Handlers
+async function handleSignUp() {
+    const email = document.getElementById('email').value;
+    const password = document.getElementById('password').value;
 
-    // Intersection Observer for scroll animations
+    try {
+        const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+        showNotification('Account created successfully!', 'success');
+        gtag('event', 'sign_up', {
+            'method': 'email'
+        });
+    } catch (error) {
+        showNotification(error.message, 'error');
+    }
+}
 
-    const observer = new IntersectionObserver((entries) => {
+async function handleSignIn() {
+    const email = document.getElementById('email').value;
+    const password = document.getElementById('password').value;
 
-        entries.forEach(entry => {
+    try {
+        const userCredential = await signInWithEmailAndPassword(auth, email, password);
+        showNotification('Signed in successfully!', 'success');
+        gtag('event', 'login', {
+            'method': 'email'
+        });
+    } catch (error) {
+        showNotification(error.message, 'error');
+    }
+}
 
-            if (entry.isIntersecting) {
+async function handleSignOut() {
+    try {
+        await signOut(auth);
+        showNotification('Signed out successfully!', 'success');
+    } catch (error) {
+        showNotification(error.message, 'error');
+    }
+}
 
-                entry.target.classList.add('animate-in');
+// Meme Management Functions
+async function handleAddMeme() {
+    const memeContent = document.getElementById('memeContent').value;
+    if (!memeContent.trim()) {
+        showNotification('Please enter some content for your meme', 'error');
+        return;
+    }
 
-            }
-
+    try {
+        await addDoc(collection(db, "memes"), {
+            content: memeContent,
+            userId: currentUser.uid,
+            author: currentUser.email,
+            likes: 0,
+            created: serverTimestamp()
         });
 
-    }, { threshold: 0.1 });
+        document.getElementById('memeContent').value = '';
+        showNotification('Meme posted successfully!', 'success');
+        gtag('event', 'create_meme');
+        await loadMemes();
+    } catch (error) {
+        showNotification(error.message, 'error');
+    }
+}
 
-    
+async function handleLikeMeme(memeId) {
+    if (!currentUser) {
+        showNotification('Please sign in to like memes', 'error');
+        return;
+    }
 
-    // Observe elements with animation classes
+    try {
+        const memeRef = doc(db, "memes", memeId);
+        await updateDoc(memeRef, {
+            likes: increment(1)
+        });
+        gtag('event', 'like_meme');
+        await loadMemes();
+    } catch (error) {
+        showNotification(error.message, 'error');
+    }
+}
 
-    document.querySelectorAll('.animate-on-scroll').forEach(el => {
+async function handleDeleteMeme(memeId) {
+    try {
+        await deleteDoc(doc(db, "memes", memeId));
+        showNotification('Meme deleted successfully!', 'success');
+        gtag('event', 'delete_meme');
+        await loadMemes();
+    } catch (error) {
+        showNotification(error.message, 'error');
+    }
+}
 
-        observer.observe(el);
+async function loadMemes() {
+    const memesListElement = document.getElementById('memesList');
+    memesListElement.innerHTML = '<div class="loading">Loading memes...</div>';
 
-    });
+    try {
+        const q = query(collection(db, "memes"), orderBy("created", "desc"));
+        const querySnapshot = await getDocs(q);
+        
+        let memesHTML = '';
+        querySnapshot.forEach((doc) => {
+            const meme = doc.data();
+            const isOwner = meme.userId === currentUser?.uid;
+            
+            memesHTML += `
+                <div class="meme-card" data-meme-id="${doc.id}">
+                    <div class="meme-content">${meme.content}</div>
+                    <div class="meme-metadata">
+                        <span class="meme-author">Posted by ${meme.author}</span>
+                        <div class="meme-actions">
+                            <button onclick="handleLikeMeme('${doc.id}')" class="btn-like">
+                                ❤️ ${meme.likes || 0}
+                            </button>
+                            ${isOwner ? `
+                                <button onclick="handleDeleteMeme('${doc.id}')" class="btn-delete">
+                                    🗑️ Delete
+                                </button>
+                            ` : ''}
+                        </div>
+                    </div>
+                </div>
+            `;
+        });
 
+        memesListElement.innerHTML = memesHTML || '<p class="no-memes">No memes yet. Be the first to post!</p>';
+    } catch (error) {
+        memesListElement.innerHTML = '<p class="error">Error loading memes. Please try again later.</p>';
+        console.error('Error loading memes:', error);
+    }
 }
 
 // Utility Functions
+function showNotification(message, type = 'info') {
+    const notification = document.createElement('div');
+    notification.className = `notification ${type}`;
+    notification.textContent = message;
 
-function navigateToSection(section) {
-
-    const targetSection = document.getElementById(section);
-
-    if (targetSection) {
-
-        window.scrollTo({
-
-            top: targetSection.offsetTop - 80,
-
-            behavior: 'smooth'
-
-        });
-
-    }
-
+    document.body.appendChild(notification);
+    setTimeout(() => {
+        notification.classList.add('fade-out');
+        setTimeout(() => notification.remove(), 300);
+    }, 3000);
 }
 
-function showNotification(message, type) {
-
-    notifications.show(message, type);
-
+// AdSense Integration
+function initializeAdSense() {
+    (adsbygoogle = window.adsbygoogle || []).push({});
 }
 
-function createTemplateElement(template) {
-
-    const element = document.createElement('div');
-
-    element.className = 'template-item';
-
-    element.innerHTML = `
-
-        <img src="${template.thumbnailUrl}" alt="${template.name}">
-
-        <span>${template.name}</span>
-
-    `;
-
-    return element;
-
+// Google Analytics Event Tracking
+function trackEvent(eventName, params = {}) {
+    gtag('event', eventName, params);
 }
 
-// Initialize background animation
+// Export functions for global access
+window.handleSignUp = handleSignUp;
+window.handleSignIn = handleSignIn;
+window.handleSignOut = handleSignOut;
+window.handleAddMeme = handleAddMeme;
+window.handleLikeMeme = handleLikeMeme;
+window.handleDeleteMeme = handleDeleteMeme;
 
-function initBackgroundAnimation() {
-
-    const canvas = document.createElement('canvas');
-
-    const ctx = canvas.getContext('2d');
-
+// Initialize the application
+document.addEventListener('DOMContentLoaded', () => {
+    renderAuthForm();
     
-
-    canvas.className = 'background-canvas';
-
-    document.body.appendChild(canvas);
-
-    
-
-    function resize() {
-
-        canvas.width = window.innerWidth;
-
-        canvas.height = window.innerHeight;
-
-    }
-
-    
-
-    window.addEventListener('resize', resize);
-
-    resize();
-
-    
-
-    // Animation loop for background effects
-
-    function animate() {
-
-        // Add your creative background animation here
-
-        requestAnimationFrame(animate);
-
-    }
-
-    
-
-    animate();
-
-}
-
-// Error handling
-
-window.onerror = function(msg, url, lineNo, columnNo, error) {
-
-    console.error('Error: ', msg, url, lineNo, columnNo, error);
-
-    showNotification('Something went wrong. Please try again.', 'error');
-
-    return false;
-
-};
-
-// Export for module usage
-
-export {
-
-    auth,
-
-    memeCreator,
-
-    notifications,
-
-    initializeUI,
-
-    setupEventListeners
-
-};
+    // Initialize Google Analytics
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'G-0M1JK8BL7X');
+});
